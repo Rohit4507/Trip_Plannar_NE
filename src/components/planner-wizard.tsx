@@ -64,47 +64,56 @@ const GATEWAY_OPTIONS = [
   { id: "gangtok", label: "Bagdogra (IXB)" },
 ];
 
+const DEFAULT_FORM: Form = {
+  months: [11],
+  days: 8,
+  interests: ["nature", "culture", "offbeat"],
+  pace: "balanced",
+  tier: "mid",
+  traveller: "friends",
+  people: 2,
+  nationality: "indian",
+  states: [],
+  budget: "",
+  start: "",
+  avoidPermits: false,
+};
+
+function parseDeepLink(search: string): Partial<Form> {
+  const sp = new URLSearchParams(search);
+  const stateCode = sp.get("state");
+  const placeId = sp.get("place");
+  const dayCount = Number(sp.get("days"));
+  const patch: Partial<Form> = {};
+
+  const place = placeId ? PLACES.find((x) => x.id === placeId) : undefined;
+  if (place) {
+    patch.states = [place.st];
+    patch.interests = Array.from(new Set(place.tags)).slice(0, 4);
+  } else if (stateCode && STATES.some((s) => s.code === stateCode)) {
+    patch.states = [stateCode as StateCode];
+  }
+  if (Number.isFinite(dayCount) && dayCount >= 3 && dayCount <= 21) patch.days = Math.round(dayCount);
+
+  return patch;
+}
+
 export function PlannerWizard() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [f, setF] = useState<Form>({
-    months: [11],
-    days: 8,
-    interests: ["nature", "culture", "offbeat"],
-    pace: "balanced",
-    tier: "mid",
-    traveller: "friends",
-    people: 2,
-    nationality: "indian",
-    states: [],
-    budget: "",
-    start: "",
-    avoidPermits: false,
-  });
+  const [f, setF] = useState<Form>(DEFAULT_FORM);
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setF((p) => ({ ...p, [key]: value }));
 
-  // deep-link prefill: /?place=nongriat&state=ML&days=6#planner
+  // Deep-link prefill: /?place=nongriat&state=ML&days=6#planner
+  // Every deep link in the app is a plain <a href>, i.e. a full document load,
+  // so the query string only has to be read once at mount. It is applied in an
+  // effect (never during render) so the server and client HTML stay identical.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(window.location.search);
-    const stateCode = sp.get("state");
-    const placeId = sp.get("place");
-    const dayCount = Number(sp.get("days"));
-    setF((prev) => {
-      const next = { ...prev };
-      const place = placeId ? PLACES.find((x) => x.id === placeId) : undefined;
-      if (place) {
-        next.states = [place.st];
-        next.interests = Array.from(new Set(place.tags)).slice(0, 4);
-      } else if (stateCode && STATES.some((s) => s.code === stateCode)) {
-        next.states = [stateCode as StateCode];
-      }
-      if (Number.isFinite(dayCount) && dayCount >= 3 && dayCount <= 21) next.days = Math.round(dayCount);
-      return next;
-    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sync from window.location, an external store
+    setF((prev) => ({ ...prev, ...parseDeepLink(window.location.search) }));
   }, []);
 
   const matches = useMemo(() => {
